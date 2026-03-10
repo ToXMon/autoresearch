@@ -55,8 +55,15 @@ The `program.md` file is essentially a super lightweight "skill".
 prepare.py      — constants, data prep + runtime utilities (do not modify)
 train.py        — model, optimizer, training loop (agent modifies this)
 program.md      — agent instructions
+CONTRIBUTING.md — local setup and review guidance
 pyproject.toml  — dependencies
 ```
+
+Repository-wide coding agent guidance now lives in `.github/copilot-instructions.md`. It explains that this repo is being shaped into an AutoResearch Safe Starter for Akash, and it sets expectations around beginner-friendly docs, security, reproducibility, persistent `/data` paths, and small reviewable PRs.
+
+## Contributing
+
+If you want to run the project locally or review agent-generated pull requests, start with [`CONTRIBUTING.md`](CONTRIBUTING.md). The guidance there is written to be easy to follow for non-expert developers.
 
 ## Design choices
 
