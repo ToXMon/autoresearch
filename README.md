@@ -65,6 +65,56 @@ Repository-wide coding agent guidance now lives in `.github/copilot-instructions
 
 If you want to run the project locally or review agent-generated pull requests, start with [`CONTRIBUTING.md`](CONTRIBUTING.md). The guidance there is written to be easy to follow for non-expert developers.
 
+## Running on Akash with Docker
+
+This repository ships a `Dockerfile` and `start.sh` so you can deploy the AutoResearch Safe Starter as a container on [Akash Network](https://akash.network/) (or any other container runtime with a single NVIDIA GPU).
+
+### What the Docker image contains
+
+| Layer | What it provides |
+|---|---|
+| `nvidia/cuda:12.4.1-runtime-ubuntu22.04` | CUDA runtime so PyTorch can use the GPU |
+| System packages | `python3`, `git`, `curl`, `ca-certificates`, `tini`, `bash` |
+| `uv` | Fast Python package manager (used by the upstream autoresearch quick-start) |
+| `/app/autoresearch` | A shallow clone of `karpathy/autoresearch` baked in at build time |
+| `/data/logs`, `/data/output` | Empty directories for runtime outputs (mount a volume here on Akash) |
+| `/start.sh` | Entrypoint that installs deps, preps data, and launches training |
+
+### Why secrets are not baked into the image
+
+Building your API keys into the image would mean anyone who can pull the image can read your keys. Instead, every secret stays **outside** the image and is injected only at container start time.
+
+### Passing secrets at runtime
+
+Use environment variables to pass secrets to the container. You **never** put these in the `Dockerfile` or `start.sh`.
+
+**Docker CLI example:**
+```bash
+docker run --gpus all \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -v /my/host/data:/data \
+  ghcr.io/toxmon/autoresearch:latest
+```
+
+**Akash SDL example** (inside your `services` block):
+```yaml
+env:
+  - ANTHROPIC_API_KEY=<your-key-here>   # injected at deploy time, never hardcoded
+```
+
+The container reads these variables at runtime through the shell environment. Nothing sensitive ever ends up in a Docker layer or in the git repository.
+
+### Persistent storage
+
+Mount a volume at `/data` so your logs and training outputs survive container restarts:
+
+```
+/data/logs/    — training log files (one per run, timestamped)
+/data/output/  — model checkpoints and result artifacts
+```
+
+Without a volume mount the directories still exist inside the container, which is useful for local testing.
+
 ## Design choices
 
 - **Single file to modify.** The agent only touches `train.py`. This keeps the scope manageable and diffs reviewable.
