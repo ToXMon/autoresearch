@@ -1,272 +1,501 @@
-# autoresearch
+# AutoResearch Safe Starter for Akash
 
 ![teaser](progress.png)
 
-*One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of "group meeting". That era is long gone. Research is now entirely the domain of autonomous swarms of AI agents running across compute cluster megastructures in the skies. The agents claim that we are now in the 10,205th generation of the code base, in any case no one could tell if that's right or wrong as the "code" is now a self-modifying binary that has grown beyond human comprehension. This repo is the story of how it all began. -@karpathy, March 2026*.
+A beginner-friendly guide to running the [karpathy/autoresearch](https://github.com/karpathy/autoresearch) autonomous AI research loop on [Akash Network](https://akash.network/) using Docker.
 
-The idea: give an AI agent a small but real LLM training setup and let it experiment autonomously overnight. It modifies the code, trains for 5 minutes, checks if the result improved, keeps or discards, and repeats. You wake up in the morning to a log of experiments and (hopefully) a better model. The training code here is a simplified single-GPU implementation of [nanochat](https://github.com/karpathy/nanochat). The core idea is that you're not touching any of the Python files like you normally would as a researcher. Instead, you are programming the `program.md` Markdown files that provide context to the AI agents and set up your autonomous research org. The default `program.md` in this repo is intentionally kept as a bare bones baseline, though it's obvious how one would iterate on it over time to find the "research org code" that achieves the fastest research progress, how you'd add more agents to the mix, etc. A bit more context on this project is here in this [tweet](https://x.com/karpathy/status/2029701092347630069).
+---
 
-## How it works
+## Table of contents
 
-The repo is deliberately kept small and only really has a three files that matter:
+1. [What this project is](#1-what-this-project-is)
+2. [What karpathy/autoresearch does](#2-what-karpathyautoresearch-does)
+3. [What Akash does in this setup](#3-what-akash-does-in-this-setup)
+4. [Why an LLM API key is required](#4-why-an-llm-api-key-is-required)
+5. [Where the API key is entered](#5-where-the-api-key-is-entered)
+6. [Why the key is not stored in the image](#6-why-the-key-is-not-stored-in-the-image)
+7. [Project structure](#7-project-structure)
+8. [Local development](#8-local-development)
+9. [Building the Docker image](#9-building-the-docker-image)
+10. [Pushing the image to a registry](#10-pushing-the-image-to-a-registry)
+11. [Deploying on Akash Console](#11-deploying-on-akash-console)
+12. [Where logs go](#12-where-logs-go)
+13. [Where outputs go](#13-where-outputs-go)
+14. [Common mistakes](#14-common-mistakes)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Security notes](#16-security-notes)
 
-- **`prepare.py`** — fixed constants, one-time data prep (downloads training data, trains a BPE tokenizer), and runtime utilities (dataloader, evaluation). Not modified.
-- **`train.py`** — the single file the agent edits. Contains the full GPT model, optimizer (Muon + AdamW), and training loop. Everything is fair game: architecture, hyperparameters, optimizer, batch size, etc. **This file is edited and iterated on by the agent**.
-- **`program.md`** — baseline instructions for one agent. Point your agent here and let it go. **This file is edited and iterated on by the human**.
+---
 
-By design, training runs for a **fixed 5-minute time budget** (wall clock, excluding startup/compilation), regardless of the details of your compute. The metric is **val_bpb** (validation bits per byte) — lower is better, and vocab-size-independent so architectural changes are fairly compared.
+## 1. What this project is
 
-If you are new to neural networks, this ["Dummy's Guide"](https://x.com/hooeem/status/2030720614752039185) looks pretty good for a lot more context.
+This repository is an **AutoResearch Safe Starter** — a Docker-based setup that makes it easy to deploy [karpathy/autoresearch](https://github.com/karpathy/autoresearch) on [Akash Network](https://akash.network/), a decentralized GPU cloud.
 
-## Quick start
+It is intentionally simple and beginner-friendly. You do not need to be an expert in Docker, Kubernetes, or decentralized infrastructure to use it. Everything you need to get started is in this guide.
 
-**Requirements:** A single NVIDIA GPU (tested on H100), Python 3.10+, [uv](https://docs.astral.sh/uv/).
+> *"One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun... This repo is the story of how it all began."* — @karpathy, March 2026
+
+---
+
+## 2. What karpathy/autoresearch does
+
+**autoresearch** gives an AI coding agent a small, real neural-network training setup and tells it to improve the model autonomously — overnight, while you sleep.
+
+Here is the loop:
+
+1. The agent reads `program.md` (your instructions) and `train.py` (the training code).
+2. It proposes a change — maybe a new optimizer, a different batch size, a tweaked architecture.
+3. It edits `train.py` and runs training for exactly **5 minutes**.
+4. It checks whether the model improved (lower **val_bpb** = better).
+5. If the change helped, it keeps it. If not, it discards it and tries something else.
+6. It repeats until you stop it.
+
+You wake up to a log of experiments and, hopefully, a better model. You never touch the Python files yourself — instead you write `program.md` to guide the agent's strategy.
+
+**Key files (from karpathy/autoresearch):**
+
+| File | Role |
+|---|---|
+| `prepare.py` | Downloads training data and trains a tokenizer. **Do not modify.** |
+| `train.py` | The full GPT model, optimizer, and training loop. **The agent edits this.** |
+| `program.md` | Plain-text instructions for the agent. **You edit this.** |
+
+The metric tracked is **val_bpb** (validation bits per byte). Lower is better, and it is vocabulary-size-independent so different architectures can be fairly compared.
+
+---
+
+## 3. What Akash does in this setup
+
+[Akash Network](https://akash.network/) is a **decentralized cloud marketplace** where independent data-center operators (called "providers") rent out their GPU and CPU capacity. You pay in AKT (Akash's token) or USDC.
+
+In this setup, Akash provides:
+
+- A **GPU node** (NVIDIA H100, A100, etc.) to run training on.
+- **Persistent storage** mounted at `/data` so your logs and model checkpoints survive container restarts.
+- A **browser-based console** ([console.akash.network](https://console.akash.network/)) that lets you deploy without any command-line tools.
+
+You describe your deployment in a file called `deploy.yaml` (an Akash SDL — Stack Definition Language file). Akash providers bid on your deployment, and you pick the one that fits your budget.
+
+---
+
+## 4. Why an LLM API key is required
+
+The autonomous research loop requires an AI coding agent — something like Claude (Anthropic) or GPT-4 (OpenAI) — to read the training code, plan experiments, and write new code.
+
+These AI services are not free. You need an **API key** to authenticate requests to them. Without a valid key, the agent cannot generate any code and the experiment loop cannot run.
+
+**Where to get a key:**
+
+| Provider | Where to get a key |
+|---|---|
+| Anthropic (Claude) | [console.anthropic.com](https://console.anthropic.com/) |
+| OpenAI (GPT-4) | [platform.openai.com](https://platform.openai.com/api-keys) |
+
+The key looks something like `sk-ant-api03-...` (Anthropic) or `sk-proj-...` (OpenAI). Keep it private — treat it like a password.
+
+---
+
+## 5. Where the API key is entered
+
+**Short answer:** you pass it as an environment variable when you start the container. You never put it in any file that gets saved or committed to git.
+
+There are two main ways to do this:
+
+### Option A — Docker CLI (local testing)
 
 ```bash
+docker run --gpus all \
+  -e LLM_API_KEY=sk-ant-api03-your-real-key-here \
+  -e LLM_PROVIDER=anthropic \
+  -e MODEL_NAME=claude-3-7-sonnet-20250219 \
+  -v /my/local/data:/data \
+  ghcr.io/your-github-username/autoresearch:latest
+```
 
-# 1. Install uv project manager (if you don't already have it)
+Replace `sk-ant-api03-your-real-key-here` with your actual key. The `-e` flag sets an environment variable inside the container.
+
+### Option B — Akash Console (cloud deployment)
+
+When you deploy via [console.akash.network](https://console.akash.network/), the deploy form has an **environment variables** section where you can type your key directly into the browser. It is sent securely to the provider and never written to a file.
+
+See [Section 11 — Deploying on Akash Console](#11-deploying-on-akash-console) for step-by-step instructions.
+
+### All environment variables
+
+The container reads the following variables at startup:
+
+**Required (must be set):**
+
+| Variable | Secret? | Example value | What it does |
+|---|---|---|---|
+| `LLM_API_KEY` | **Yes** | `sk-ant-api03-...` | API key for the LLM provider. Never commit this. |
+| `LLM_PROVIDER` | No | `anthropic` | Name of the provider (`anthropic`, `openai`, etc.) |
+| `MODEL_NAME` | No | `claude-3-7-sonnet-20250219` | The exact model identifier to use |
+
+**Optional (safe defaults are built in):**
+
+| Variable | Default | What it does |
+|---|---|---|
+| `DATA_DIR` | `/data` | Root directory for all persistent data |
+| `LOG_DIR` | `/data/logs` | Where startup and run logs are written |
+| `OUTPUT_DIR` | `/data/output` | Where model checkpoints are saved |
+| `RUN_MODE` | `agent` | How the container runs (`agent` is the only supported mode) |
+| `MAX_ITERS` | `25` | Maximum number of experiment iterations the agent may run |
+| `EXPERIMENT_TIMEOUT_SECONDS` | `900` | Seconds before a single experiment is automatically cancelled |
+| `LLM_API_BASE` | *(empty)* | Custom API endpoint URL — leave empty unless using a self-hosted model |
+
+See [`.env.example`](.env.example) for a copy-paste template of all variables.
+
+---
+
+## 6. Why the key is not stored in the image
+
+If your API key were baked into the Docker image, anyone who can pull the image from a registry could extract and use your key — and you would pay for their API calls.
+
+This starter follows a simple rule: **secrets live outside the image, always**.
+
+- The `Dockerfile` contains no secrets.
+- The `start.sh` entrypoint script contains no secrets.
+- The `deploy.yaml` SDL file contains only a placeholder (`REPLACE_WITH_YOUR_LLM_API_KEY_AT_DEPLOY_TIME`).
+
+Your real key is passed in at container start time via an environment variable. It is read by `start.sh` only to confirm it is present (so the container fails fast with a clear error if you forgot to set it), and then it stays in memory for the coding agent to use later. It is never written to a file and never printed in full in the logs.
+
+---
+
+## 7. Project structure
+
+```
+autoresearch/
+├── Dockerfile          # Builds the container image (no secrets inside)
+├── start.sh            # Container entrypoint: validates config, prepares repo, waits for agent
+├── deploy.yaml         # Akash SDL: describes hardware, storage, and env vars for deployment
+├── .env.example        # Template of all environment variables (copy and fill in locally)
+├── program.md          # Instructions for the AI agent (you edit this to guide experiments)
+├── prepare.py          # One-time data prep: downloads training data and trains tokenizer
+├── train.py            # GPT model + training loop (the agent edits this file)
+├── pyproject.toml      # Python dependencies
+├── CONTRIBUTING.md     # How to run locally and review agent PRs
+└── README.md           # This file
+```
+
+**Key paths inside the running container:**
+
+```
+/app/autoresearch/   — the karpathy/autoresearch repo (baked in at build time)
+/data/               — persistent volume root (mount a volume here on Akash)
+/data/logs/          — log files written at runtime
+/data/output/        — model checkpoints and experiment results
+/start.sh            — the entrypoint script
+```
+
+---
+
+## 8. Local development
+
+Use this section if you want to run the project on your own machine (without Docker or Akash) to test changes before deploying.
+
+**Requirements:**
+
+- A single NVIDIA GPU (tested on H100; other cards may work)
+- Python 3.10 or newer
+- [uv](https://docs.astral.sh/uv/) — a fast Python package manager
+
+```bash
+# Step 1 — Install uv (skip if you already have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install dependencies
+# Step 2 — Install Python dependencies
 uv sync
 
-# 3. Download data and train tokenizer (one-time, ~2 min)
+# Step 3 — Download training data and train the tokenizer (one-time, ~2 min)
 uv run prepare.py
 
-# 4. Manually run a single training experiment (~5 min)
+# Step 4 — Run one training experiment to make sure everything works (~5 min)
 uv run train.py
 ```
 
-If the above commands all work ok, your setup is working and you can go into autonomous research mode.
+If `uv run train.py` completes and prints a `val_bpb:` result, your local setup is working.
 
-## Running the agent
+**Running the agent locally:**
 
-Simply spin up your Claude/Codex or whatever you want in this repo (and disable all permissions), then you can prompt something like:
+Open `program.md` and read the instructions inside. Then attach your preferred coding agent (e.g. Claude in an IDE extension) to this repository, point it at `program.md`, and start it. The agent will run the experiment loop described in that file.
 
+For PR review guidance and more development tips, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+---
+
+## 9. Building the Docker image
+
+You only need to build the image if you want to deploy to Akash (or any other container platform). Local development does not require Docker.
+
+**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine on Linux) installed and running.
+
+```bash
+# Clone this repository first if you haven't already
+git clone https://github.com/ToXMon/autoresearch.git
+cd autoresearch
+
+# Build the image and tag it with your registry path
+# Replace "your-github-username" with your actual GitHub username
+docker build -t ghcr.io/your-github-username/autoresearch:latest .
 ```
-Hi have a look at program.md and let's kick off a new experiment! let's do the setup first.
-```
 
-The `program.md` file is essentially a super lightweight "skill".
+The build downloads the CUDA base image and clones `karpathy/autoresearch` into the image. It takes a few minutes the first time (most of that is downloading the CUDA base layer).
 
-## Project structure
-
-```
-prepare.py      — constants, data prep + runtime utilities (do not modify)
-train.py        — model, optimizer, training loop (agent modifies this)
-program.md      — agent instructions
-CONTRIBUTING.md — local setup and review guidance
-pyproject.toml  — dependencies
-```
-
-Repository-wide coding agent guidance now lives in `.github/copilot-instructions.md`. It explains that this repo is being shaped into an AutoResearch Safe Starter for Akash, and it sets expectations around beginner-friendly docs, security, reproducibility, persistent `/data` paths, and small reviewable PRs.
-
-## Contributing
-
-If you want to run the project locally or review agent-generated pull requests, start with [`CONTRIBUTING.md`](CONTRIBUTING.md). The guidance there is written to be easy to follow for non-expert developers.
-
-## Running on Akash with Docker
-
-This repository ships a `Dockerfile` and `start.sh` so you can deploy the AutoResearch Safe Starter as a container on [Akash Network](https://akash.network/) (or any other container runtime with a single NVIDIA GPU).
-
-### What the Docker image contains
+**What the image contains after the build:**
 
 | Layer | What it provides |
 |---|---|
 | `nvidia/cuda:12.4.1-runtime-ubuntu22.04` | CUDA runtime so PyTorch can use the GPU |
 | System packages | `python3`, `git`, `curl`, `ca-certificates`, `tini`, `bash` |
-| `uv` | Fast Python package manager (used by the upstream autoresearch quick-start) |
-| `/app/autoresearch` | A shallow clone of `karpathy/autoresearch` baked in at build time |
-| `/data/logs`, `/data/output` | Empty directories for runtime outputs (mount a volume here on Akash) |
-| `/start.sh` | Entrypoint that validates runtime config, prepares the repo, and keeps the container ready for later orchestration |
+| `uv` | Fast Python package manager |
+| `/app/autoresearch` | A shallow clone of `karpathy/autoresearch` |
+| `/data/logs`, `/data/output` | Empty directories for runtime outputs |
+| `/start.sh` | Entrypoint script |
 
-### Why the LLM API key is needed
+> The image does **not** contain your API key, any training data, or any model checkpoints. Those are created or injected at runtime.
 
-The AutoResearch Safe Starter is meant to be paired with a coding agent or orchestration layer that talks to an external LLM provider. That provider needs an API key so the agent can request completions, plan changes, and run its experiment loop.
+---
 
-In this first safe pass, `start.sh` **validates** that the key exists before doing setup work. The starter does **not** print the key, write it into the image, or commit it into git.
+## 10. Pushing the image to a registry
 
-### Why secrets are not baked into the image
+Akash providers pull your container image from a public registry when they start your deployment. You need to push your locally built image to a registry before deploying.
 
-Building your API keys into the image would mean anyone who can pull the image can read your keys. Instead, every secret stays **outside** the image and is injected only at container start time.
-
-### Runtime environment variables
-
-The starter currently expects these required variables at runtime:
-
-| Variable | Required | Secret | Example |
-|---|---|---|---|
-| `LLM_API_KEY` | Yes | Yes | `sk-ant-...` |
-| `LLM_PROVIDER` | Yes | No | `anthropic` |
-| `MODEL_NAME` | Yes | No | `claude-3-7-sonnet-20250219` |
-
-Optional variables default to safe values:
-
-| Variable | Default |
-|---|---|
-| `DATA_DIR` | `/data` |
-| `LOG_DIR` | `/data/logs` |
-| `OUTPUT_DIR` | `/data/output` |
-| `RUN_MODE` | `agent` |
-| `MAX_ITERS` | `25` |
-| `EXPERIMENT_TIMEOUT_SECONDS` | `900` |
-
-See [`.env.example`](.env.example) for a copy-paste-friendly template.
-
-### Where the API key is injected
-
-Use environment variables to pass secrets to the container. You **never** put these in the `Dockerfile` or `start.sh`.
-
-**Docker CLI example:**
-```bash
-docker run --gpus all \
-  -e LLM_API_KEY=sk-ant-... \
-  -e LLM_PROVIDER=anthropic \
-  -e MODEL_NAME=claude-3-7-sonnet-20250219 \
-  -v /my/host/data:/data \
-  ghcr.io/toxmon/autoresearch:latest
-```
-
-**Akash SDL example** (inside your `services` block):
-```yaml
-env:
-  - LLM_API_KEY=<your-key-here>         # secret, injected at deploy time
-  - LLM_PROVIDER=anthropic              # non-secret runtime setting
-  - MODEL_NAME=claude-3-7-sonnet-20250219
-```
-
-The container reads these variables at runtime through the shell environment. Nothing sensitive ever ends up in a Docker layer or in the git repository.
-
-### Where the API key is consumed
-
-- **Injected:** by Docker `-e`, an Akash SDL `env:` block, or another runtime secret system
-- **Validated:** by `/start.sh` as soon as the container starts, so missing config fails fast with a beginner-friendly error
-- **Consumed later:** by the coding agent or orchestration process you attach to the running container, which will read the same `LLM_API_KEY`, `LLM_PROVIDER`, and `MODEL_NAME` values from the environment
-
-`prepare.py` does not use the LLM API key. Its output is written to `/data/logs/prepare.log` so you can confirm the repo was prepared correctly before you start orchestration.
-
-### Persistent storage
-
-Mount a volume at `/data` so your logs and training outputs survive container restarts:
-
-```
-/data/logs/    — startup and preparation logs (including prepare.log, plus future run logs)
-/data/output/  — model checkpoints and result artifacts
-```
-
-Without a volume mount the directories still exist inside the container, which is useful for local testing.
-
-## How to deploy this on Akash Console
-
-[Akash Console](https://console.akash.network/) is a browser-based UI that lets you deploy containers on the Akash Network without any command-line tools.  Follow these steps to get the AutoResearch Safe Starter running on a GPU node.
-
-### Step 1 — Build and push your Docker image
-
-You need a public container registry that Akash providers can pull from (GitHub Container Registry, Docker Hub, etc.).
+**GitHub Container Registry (recommended — free for public images):**
 
 ```bash
-# Build the image locally
-docker build -t ghcr.io/your-github-username/autoresearch:latest .
+# Log in to GitHub Container Registry
+echo $GITHUB_TOKEN | docker login ghcr.io -u your-github-username --password-stdin
 
-# Push it to the registry
+# Push the image
 docker push ghcr.io/your-github-username/autoresearch:latest
 ```
 
-> **Tip:** GitHub Container Registry (`ghcr.io`) is free for public images and works well with Akash.  Make the image public in your package settings so any Akash provider can pull it.
+After pushing, make the image **public** in your GitHub package settings so that Akash providers can pull it without authentication:
 
-### Step 2 — Replace the image placeholder in deploy.yaml
+1. Go to `github.com/your-github-username` → **Packages** tab.
+2. Click the `autoresearch` package.
+3. Click **Package settings** → **Change visibility** → **Public**.
 
-Open `deploy.yaml` and change the `image:` line under `services.autoresearch`:
+**Docker Hub (alternative):**
+
+```bash
+docker login
+
+docker tag ghcr.io/your-github-username/autoresearch:latest \
+  your-dockerhub-username/autoresearch:latest
+
+docker push your-dockerhub-username/autoresearch:latest
+```
+
+---
+
+## 11. Deploying on Akash Console
+
+[Akash Console](https://console.akash.network/) is a browser-based UI. You do not need any command-line Akash tools to deploy.
+
+### Step 1 — Update deploy.yaml with your image
+
+Open `deploy.yaml` in a text editor and replace the placeholder image name:
 
 ```yaml
-# Before
+# Before (placeholder)
 image: your-registry/autoresearch:latest
 
-# After — use your real image reference
+# After (your real image)
 image: ghcr.io/your-github-username/autoresearch:latest
 ```
 
-### Step 3 — Set your environment variables
+### Step 2 — Connect your Akash wallet
 
-Still in `deploy.yaml`, find the `env:` block and update the values that matter for your run:
+1. Go to [console.akash.network](https://console.akash.network/).
+2. Click **Connect Wallet** in the top right.
+3. Follow the prompts to connect Keplr or another supported wallet with some AKT or USDC balance.
 
-| Variable | What to set | Secret? |
+### Step 3 — Create a new deployment
+
+1. Click **Deploy** in the left sidebar.
+2. Select **Build your template** → **SDL**.
+3. Paste the full contents of your updated `deploy.yaml` into the editor.
+
+### Step 4 — Set your API key in the deploy form
+
+Before submitting, look for the environment variables section in the form. Find `LLM_API_KEY` and replace the placeholder with your real key:
+
+```
+LLM_API_KEY=sk-ant-api03-your-real-key-here
+```
+
+> ⚠️ **Do not put a real key in `deploy.yaml` and commit it to git.** Always enter the key in the browser form so it is never saved to a file.
+
+### Step 5 — Review bids and deploy
+
+1. Click **Deploy** (or **Create Deployment**).
+2. Wait for provider bids to appear — this usually takes 30–60 seconds.
+3. Pick a provider with an NVIDIA GPU listed in its attributes.
+4. Click **Accept Bid** → **Deploy**.
+
+### Step 6 — Watch the startup logs
+
+Once deployed, click your deployment → **Logs** tab. You should see something like:
+
+```
+==> AutoResearch Safe Starter
+    APP_HOME   : /app
+    DATA_DIR   : /data
+    LOG_DIR    : /data/logs
+    ...
+    LLM_API_KEY  : [set]
+==> Installing Python dependencies with uv...
+==> Running prepare.py (downloads data and trains tokenizer)...
+==> Agent mode is ready.
+==> Keeping the container alive for later orchestration...
+```
+
+If you see `ERROR: LLM_API_KEY is not set`, the key was not passed correctly — see [Section 14 — Common mistakes](#14-common-mistakes).
+
+---
+
+## 12. Where logs go
+
+| Log file | Path inside container | What it contains |
 |---|---|---|
-| `LLM_API_KEY` | Your real API key from Anthropic, OpenAI, etc. | **Yes — set at deploy time, never commit** |
-| `LLM_PROVIDER` | `anthropic`, `openai`, or your provider name | No |
-| `MODEL_NAME` | The model identifier, e.g. `claude-3-7-sonnet-20250219` | No |
-| `LLM_API_BASE` | Leave empty unless using a custom API endpoint | No |
-| `DATA_DIR` | Path for persistent data — default `/data` is correct for Akash | No |
-| `LOG_DIR` | Path for log files — default `/data/logs` | No |
-| `OUTPUT_DIR` | Path for model checkpoints — default `/data/output` | No |
-| `RUN_MODE` | `agent` (the only supported mode right now) | No |
-| `MAX_ITERS` | Max experiment iterations the agent may run | No |
-| `EXPERIMENT_TIMEOUT_SECONDS` | Seconds before a single experiment is cancelled | No |
+| Startup log | Akash Console → Logs tab | Everything printed by `start.sh` at container start |
+| Data preparation log | `/data/logs/prepare.log` | Output of `prepare.py` (data download, tokenizer training) |
+| Experiment run log | `/data/logs/run.log` *(created by agent)* | Training output, val_bpb results, errors |
 
-> ⚠️ **Never commit a real `LLM_API_KEY` to git.**  The placeholder value in `deploy.yaml` is intentionally fake.  Enter your real key in the Akash Console deploy form (see Step 4).
+**Reading a log file from Akash Console:**
 
-### Step 4 — Deploy in Akash Console
+Use the **Shell** tab in the Akash Console (if available), or use the `akash` CLI:
 
-1. Go to [console.akash.network](https://console.akash.network/) and connect your wallet.
-2. Click **Deploy → SDL** and paste the contents of your updated `deploy.yaml`.
-3. In the deploy form you can override any `env:` value — this is the right place to enter your real `LLM_API_KEY` without putting it in a file.
-4. Review the bid list, pick a provider with an NVIDIA GPU, and accept the bid.
-5. Click **Deploy** to start the container.
+```bash
+akash provider lease-shell \
+  --from <your-wallet-address> \
+  --dseq <deployment-sequence> \
+  --provider <provider-address> \
+  -- cat /data/logs/prepare.log
+```
 
-### Step 5 — Inspect logs and persistent outputs
+Because `/data` is a persistent volume, log files survive container restarts.
 
-Once the container is running:
+---
 
-- **View startup logs** in the Akash Console under your deployment → **Logs** tab.  You should see the `==> AutoResearch Safe Starter` banner followed by dependency installation and data preparation output.
-- **Check prepare.log** — the one-time data preparation step writes its output to `/data/logs/prepare.log`.  Use the Console shell or `akash provider lease-shell` to read it:
+## 13. Where outputs go
 
-  ```bash
-  akash provider lease-shell \
-    --from <your-wallet-address> \
-    --dseq <deployment-sequence> \
-    --provider <provider-address> \
-    -- cat /data/logs/prepare.log
-  ```
+| Output | Path inside container | What it is |
+|---|---|---|
+| Model checkpoints | `/data/output/` | Saved model weights from training runs |
+| Experiment results | `/data/output/results.tsv` *(created by agent)* | Tab-separated table of val_bpb scores per experiment |
+| All persistent data | `/data/` | Everything under this path survives restarts |
 
-- **Persistent outputs** are written under `/data/output/` (model checkpoints and result artifacts).  Because `/data` is a persistent volume, these files survive container restarts.
-- **Attach an orchestration layer** — the container stays alive in `agent` mode waiting for you to connect a coding agent.  When you do, it reads `LLM_PROVIDER`, `MODEL_NAME`, and `LLM_API_KEY` from the environment automatically.
+**Downloading outputs:**
 
-### Troubleshooting
+Use the Akash Console Shell tab or the `akash` CLI to list files in the container:
+
+```bash
+akash provider lease-shell \
+  --from <your-wallet-address> \
+  --dseq <deployment-sequence> \
+  --provider <provider-address> \
+  -- ls /data/output/
+```
+
+> Without a persistent volume, outputs are lost when the container stops. Make sure the `data` volume is configured in your `deploy.yaml` (it is by default).
+
+---
+
+## 14. Common mistakes
+
+### Forgetting to set `LLM_API_KEY`
+
+The container will exit immediately with:
+```
+ERROR: LLM_API_KEY is not set.
+```
+Fix: add `-e LLM_API_KEY=your-key` to your Docker command, or enter it in the Akash Console deploy form.
+
+### Committing the API key to git
+
+If you paste your real key into `deploy.yaml` and commit it, it becomes part of your git history and visible to anyone with access to the repository.
+
+Fix: use the placeholder in `deploy.yaml` and enter the real value only in the Akash Console form or a local `.env` file that is listed in `.gitignore`.
+
+### Using a private Docker image
+
+Akash providers cannot pull private images. If your image is private, the deployment will fail with an image pull error.
+
+Fix: make the image public in your registry settings (see [Section 10](#10-pushing-the-image-to-a-registry)).
+
+### Wrong image tag
+
+If the tag in `deploy.yaml` does not match the tag you pushed, the pull will fail.
+
+Fix: make sure the image name in `deploy.yaml` exactly matches what you pushed, including the tag (e.g. `:latest`).
+
+### `beta3` storage class not available
+
+Some Akash providers only support `beta2` persistent storage.
+
+Fix: change `class: beta3` to `class: beta2` in the `storage:` section of `deploy.yaml`.
+
+### No GPU bids
+
+If no providers bid on your deployment, the GPU request may be too strict or the price too low.
+
+Fix:
+- Increase `pricing.amount` in `deploy.yaml` (try `50000` or higher).
+- Remove the `signedBy:` filter to broaden provider selection.
+- Check [Akash Console](https://console.akash.network/) for current GPU availability.
+
+---
+
+## 15. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Container exits immediately with `ERROR: LLM_API_KEY is not set` | Missing env var | Re-deploy with `LLM_API_KEY` set |
-| No GPU bids appear | No matching provider | Raise `pricing.amount` or remove `signedBy` filter in `deploy.yaml` |
-| `beta3` storage class not available | Provider doesn't support it | Change `class: beta3` to `class: beta2` in `deploy.yaml` |
-| Image pull fails | Image is private or wrong tag | Make the image public and check the tag matches exactly |
+| `ERROR: LLM_API_KEY is not set` | Key not passed as env var | Set `LLM_API_KEY` in your Docker run command or Akash deploy form |
+| `ERROR: Missing required environment variable: LLM_PROVIDER` | Provider not set | Add `LLM_PROVIDER=anthropic` (or your provider) to the env vars |
+| `ERROR: Missing required environment variable: MODEL_NAME` | Model name not set | Add `MODEL_NAME=claude-3-7-sonnet-20250219` to the env vars |
+| Container exits right away | Config error in `start.sh` | Check the Akash Console Logs tab for the exact error message |
+| No bids after 2+ minutes | No matching provider | Raise `pricing.amount`, remove `signedBy`, or try a different region |
+| Image pull fails | Private image or wrong tag | Make image public; verify the tag in `deploy.yaml` matches what you pushed |
+| `beta3` storage not available | Provider limitation | Change `class: beta3` to `class: beta2` in `deploy.yaml` |
+| `/data/logs/prepare.log` is empty | Volume not mounted correctly | Confirm the `params.storage.data.mount: /data` block is in `deploy.yaml` |
+| Agent never starts experiments | Agent not attached | Connect your coding agent to the running container and point it at `program.md` |
+| `uv sync` fails during startup | Network issue or cache miss | Redeploy; the image will retry on a fresh provider |
 
-## Design choices
+---
+
+## 16. Security notes
+
+- **Never put a real API key in `deploy.yaml`, `Dockerfile`, `start.sh`, or any other file in this repository.** Use environment variables injected at runtime only.
+- **Never commit a `.env` file with real values.** The `.gitignore` in this repository already excludes `.env`, but always double-check with `git status` before committing.
+- **Treat your API key like a password.** If you suspect it has been exposed, revoke it immediately at your provider's dashboard and generate a new one.
+- **Use signed providers on Akash.** The `signedBy:` filter in `deploy.yaml` limits deployments to providers that have been verified by trusted Akash auditors. Remove it only if you trust the full pool of providers.
+- **Keep the image public but secrets private.** A public Docker image is safe as long as no secrets are baked into it. Anyone can pull and inspect the image layers — which is fine because there is nothing sensitive in them.
+- **Rotate keys periodically.** If you run long autonomous experiments, consider using short-lived API keys or keys with usage limits set on the provider dashboard.
+
+---
+
+## Design notes
 
 - **Single file to modify.** The agent only touches `train.py`. This keeps the scope manageable and diffs reviewable.
-- **Fixed time budget.** Training always runs for exactly 5 minutes, regardless of your specific platform. This means you can expect approx 12 experiments/hour and approx 100 experiments while you sleep. There are two upsides of this design decision. First, this makes experiments directly comparable regardless of what the agent changes (model size, batch size, architecture, etc). Second, this means that autoresearch will find the most optimal model for your platform in that time budget. The downside is that your runs (and results) become not comparable to other people running on other compute platforms.
-- **Self-contained.** No external dependencies beyond PyTorch and a few small packages. No distributed training, no complex configs. One GPU, one file, one metric.
+- **Fixed time budget.** Training always runs for exactly 5 minutes, making experiments directly comparable regardless of what the agent changes. You can expect approximately 12 experiments per hour, or around 100 overnight.
+- **Self-contained.** No external dependencies beyond PyTorch and a few small packages. One GPU, one file, one metric.
 
 ## Platform support
 
-This code currently requires that you have a single NVIDIA GPU. In principle it is quite possible to support CPU, MPS and other platforms but this would also bloat the code. I'm not 100% sure that I want to take this on personally right now. People can reference (or have their agents reference) the full/parent nanochat repository that has wider platform support and shows the various solutions (e.g. a Flash Attention 3 kernels fallback implementation, generic device support, autodetection, etc.), feel free to create forks or discussions for other platforms and I'm happy to link to them here in the README in some new notable forks section or etc.
+This project requires a single NVIDIA GPU. For running on other platforms (macOS, Windows, smaller GPUs), see these community forks:
 
-Seeing as there seems to be a lot of interest in tinkering with autoresearch on much smaller compute platforms than an H100, a few extra words. If you're going to try running autoresearch on smaller computers (Macbooks etc.), I'd recommend one of the forks below. On top of this, here are some recommendations for how to tune the defaults for much smaller models for aspiring forks:
-
-1. To get half-decent results I'd use a dataset with a lot less entropy, e.g. this [TinyStories dataset](https://huggingface.co/datasets/karpathy/tinystories-gpt4-clean). These are GPT-4 generated short stories. Because the data is a lot narrower in scope, you will see reasonable results with a lot smaller models (if you try to sample from them after training).
-2. You might experiment with decreasing `vocab_size`, e.g. from 8192 down to 4096, 2048, 1024, or even - simply byte-level tokenizer with 256 possibly bytes after utf-8 encoding.
-3. In `prepare.py`, you'll want to lower `MAX_SEQ_LEN` a lot, depending on the computer even down to 256 etc. As you lower `MAX_SEQ_LEN`, you may want to experiment with increasing `DEVICE_BATCH_SIZE` in `train.py` slightly to compensate. The number of tokens per fwd/bwd pass is the product of these two.
-4. Also in `prepare.py`, you'll want to decrease `EVAL_TOKENS` so that your validation loss is evaluated on a lot less data.
-5. In `train.py`, the primary single knob that controls model complexity is the `DEPTH` (default 8, here). A lot of variables are just functions of this, so e.g. lower it down to e.g. 4.
-6. You'll want to most likely use `WINDOW_PATTERN` of just "L", because "SSSL" uses alternating banded attention pattern that may be very inefficient for you. Try it.
-7. You'll want to lower `TOTAL_BATCH_SIZE` a lot, but keep it powers of 2, e.g. down to `2**14` (~16K) or so even, hard to tell.
-
-I think these would be the reasonable hyperparameters to play with. Ask your favorite coding agent for help and copy paste them this guide, as well as the full source code.
-
-## Notable forks
-
-- [miolini/autoresearch-macos](https://github.com/miolini/autoresearch-macos) (MacOS)
-- [trevin-creator/autoresearch-mlx](https://github.com/trevin-creator/autoresearch-mlx) (MacOS)
+- [miolini/autoresearch-macos](https://github.com/miolini/autoresearch-macos) (macOS)
+- [trevin-creator/autoresearch-mlx](https://github.com/trevin-creator/autoresearch-mlx) (macOS)
 - [jsegov/autoresearch-win-rtx](https://github.com/jsegov/autoresearch-win-rtx) (Windows)
+
+For tips on tuning for smaller hardware, see the [upstream karpathy/autoresearch README](https://github.com/karpathy/autoresearch#platform-support).
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to run the project locally and how to review agent-generated pull requests.
 
 ## License
 
