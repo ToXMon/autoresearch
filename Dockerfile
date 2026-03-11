@@ -77,7 +77,8 @@ RUN mkdir -p "$APP_HOME" \
 RUN mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
 
 # ── Copy the entrypoint script ────────────────────────────────────────────────
-# start.sh installs dependencies, runs data preparation, and starts training.
+# start.sh validates runtime config, installs dependencies, and prepares the
+# repository for later orchestration.
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
@@ -87,5 +88,6 @@ WORKDIR $APP_HOME
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 # tini is a tiny init process that correctly handles Unix signals (e.g., Ctrl-C)
 # and reaps zombie processes. It wraps start.sh so the container shuts down
-# cleanly when Akash stops the deployment.
+# cleanly when Akash stops the deployment, even when the starter is idling in
+# its safe first-pass agent mode.
 ENTRYPOINT ["/usr/bin/tini", "--", "/start.sh"]

@@ -78,20 +78,51 @@ This repository ships a `Dockerfile` and `start.sh` so you can deploy the AutoRe
 | `uv` | Fast Python package manager (used by the upstream autoresearch quick-start) |
 | `/app/autoresearch` | A shallow clone of `karpathy/autoresearch` baked in at build time |
 | `/data/logs`, `/data/output` | Empty directories for runtime outputs (mount a volume here on Akash) |
-| `/start.sh` | Entrypoint that installs deps, preps data, and launches training |
+| `/start.sh` | Entrypoint that validates runtime config, prepares the repo, and keeps the container ready for later orchestration |
+
+### Why the LLM API key is needed
+
+The AutoResearch Safe Starter is meant to be paired with a coding agent or orchestration layer that talks to an external LLM provider. That provider needs an API key so the agent can request completions, plan changes, and run its experiment loop.
+
+In this first safe pass, `start.sh` **validates** that the key exists before doing setup work. The starter does **not** print the key, write it into the image, or commit it into git.
 
 ### Why secrets are not baked into the image
 
 Building your API keys into the image would mean anyone who can pull the image can read your keys. Instead, every secret stays **outside** the image and is injected only at container start time.
 
-### Passing secrets at runtime
+### Runtime environment variables
+
+The starter currently expects these required variables at runtime:
+
+| Variable | Required | Secret | Example |
+|---|---|---|---|
+| `LLM_API_KEY` | Yes | Yes | `sk-ant-...` |
+| `LLM_PROVIDER` | Yes | No | `anthropic` |
+| `MODEL_NAME` | Yes | No | `claude-3-7-sonnet-20250219` |
+
+Optional variables default to safe values:
+
+| Variable | Default |
+|---|---|
+| `DATA_DIR` | `/data` |
+| `LOG_DIR` | `/data/logs` |
+| `OUTPUT_DIR` | `/data/output` |
+| `RUN_MODE` | `agent` |
+| `MAX_ITERS` | `25` |
+| `EXPERIMENT_TIMEOUT_SECONDS` | `900` |
+
+See [`.env.example`](.env.example) for a copy-paste-friendly template.
+
+### Where the API key is injected
 
 Use environment variables to pass secrets to the container. You **never** put these in the `Dockerfile` or `start.sh`.
 
 **Docker CLI example:**
 ```bash
 docker run --gpus all \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e LLM_API_KEY=sk-ant-... \
+  -e LLM_PROVIDER=anthropic \
+  -e MODEL_NAME=claude-3-7-sonnet-20250219 \
   -v /my/host/data:/data \
   ghcr.io/toxmon/autoresearch:latest
 ```
@@ -99,17 +130,27 @@ docker run --gpus all \
 **Akash SDL example** (inside your `services` block):
 ```yaml
 env:
-  - ANTHROPIC_API_KEY=<your-key-here>   # injected at deploy time, never hardcoded
+  - LLM_API_KEY=<your-key-here>         # secret, injected at deploy time
+  - LLM_PROVIDER=anthropic              # non-secret runtime setting
+  - MODEL_NAME=claude-3-7-sonnet-20250219
 ```
 
 The container reads these variables at runtime through the shell environment. Nothing sensitive ever ends up in a Docker layer or in the git repository.
+
+### Where the API key is consumed
+
+- **Injected:** by Docker `-e`, an Akash SDL `env:` block, or another runtime secret system
+- **Validated:** by `/start.sh` as soon as the container starts, so missing config fails fast with a beginner-friendly error
+- **Consumed later:** by the coding agent or orchestration process you attach to the running container, which will read the same `LLM_API_KEY`, `LLM_PROVIDER`, and `MODEL_NAME` values from the environment
+
+`prepare.py` does not use the LLM API key. Its output is written to `/data/logs/prepare.log` so you can confirm the repo was prepared correctly before you start orchestration.
 
 ### Persistent storage
 
 Mount a volume at `/data` so your logs and training outputs survive container restarts:
 
 ```
-/data/logs/    — training log files (one per run, timestamped)
+/data/logs/    — startup and preparation logs (including prepare.log, plus future run logs)
 /data/output/  — model checkpoints and result artifacts
 ```
 
