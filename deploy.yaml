@@ -1,0 +1,137 @@
+---
+# deploy.yaml — Akash SDL for AutoResearch Safe Starter
+#
+# What this file does:
+#   Describes a single-GPU container deployment of the AutoResearch Safe Starter
+#   on Akash Network.  It requests one NVIDIA GPU, CPU, RAM, ephemeral storage,
+#   and a persistent volume mounted at /data so logs and training outputs survive
+#   container restarts.
+#
+# Before you deploy:
+#   1. Build and push your Docker image (see README.md, "How to deploy on Akash").
+#   2. Replace the 'image:' placeholder below with your published image reference.
+#   3. Set LLM_API_KEY in the env section below — NEVER commit a real key to git.
+#   4. Paste this file into Akash Console and click Deploy.
+#
+# For full step-by-step guidance, see the
+# "How to deploy this on Akash Console" section in README.md.
+
+version: "2.0"
+
+# ── Services ──────────────────────────────────────────────────────────────────
+# Define the containers that will run in the deployment.
+services:
+  autoresearch:
+
+    # ── Image ─────────────────────────────────────────────────────────────────
+    # Replace this placeholder with your real image after building and pushing.
+    # Example: ghcr.io/your-github-username/autoresearch:latest
+    image: your-registry/autoresearch:latest
+
+    # ── Environment variables ─────────────────────────────────────────────────
+    # All variables are read by the container at runtime. Nothing sensitive is
+    # baked into the image. Change any value here to override the default.
+    env:
+      # Keep Python log output unbuffered so you see it in real time.
+      - PYTHONUNBUFFERED=1
+
+      # Directory layout — these must match the volume mount below (/data).
+      - DATA_DIR=/data
+      - LOG_DIR=/data/logs
+      - OUTPUT_DIR=/data/output
+
+      # Agent behaviour — how many experiment iterations to allow, and how long
+      # each experiment may run before it is automatically cancelled.
+      - RUN_MODE=agent
+      - MAX_ITERS=25
+      - EXPERIMENT_TIMEOUT_SECONDS=900
+
+      # LLM provider settings.
+      # LLM_PROVIDER: the service name your orchestration layer calls, e.g.
+      #   "anthropic" or "openai".
+      - LLM_PROVIDER=anthropic
+      # MODEL_NAME: the exact model identifier to pass to the provider API.
+      - MODEL_NAME=claude-3-7-sonnet-20250219
+      # LLM_API_BASE: leave empty unless you are using a custom/self-hosted API
+      #   endpoint.  An empty value means the provider SDK uses its default URL.
+      - LLM_API_BASE=
+
+      # ⚠  REQUIRED SECRET — set your real key here at deploy time in the
+      #    Akash Console UI.  Replace the placeholder with your actual key.
+      #    NEVER commit a real API key to git.
+      - LLM_API_KEY=REPLACE_WITH_YOUR_LLM_API_KEY_AT_DEPLOY_TIME
+
+    # ── Persistent storage mount ───────────────────────────────────────────────
+    # Bind the "data" persistent volume (defined in profiles.compute below)
+    # to /data inside the container.  Logs, checkpoints, and other outputs
+    # written to /data survive if the container restarts.
+    params:
+      storage:
+        data:
+          mount: /data
+          readOnly: false
+
+# ── Profiles ──────────────────────────────────────────────────────────────────
+# Profiles describe the hardware resources you need and how to place the
+# deployment across Akash providers.
+profiles:
+  compute:
+    autoresearch:
+      resources:
+        # CPU — 4 dedicated vCPUs is a reasonable minimum for a GPU training job.
+        cpu:
+          units: 4
+
+        # RAM — 16 GiB gives headroom for the data loader and tokenizer.
+        memory:
+          size: 16Gi
+
+        # Storage — two entries:
+        #   1. Ephemeral storage for /tmp, pip/uv cache, and other scratch space.
+        #   2. A named persistent volume ("data") for /data logs and outputs.
+        storage:
+          - size: 20Gi
+          - name: data
+            size: 100Gi
+            attributes:
+              persistent: true
+              # "beta3" is the standard Akash persistent-storage class.
+              # Change to "beta2" if beta3 is not available on your target provider.
+              class: beta3
+
+        # GPU — request exactly one NVIDIA GPU.  Akash will match providers
+        # that have at least one available NVIDIA card.
+        gpu:
+          units: 1
+          attributes:
+            vendor:
+              nvidia:
+
+  placement:
+    akash:
+      # signedBy filters to providers whose attributes have been verified by
+      # trusted Akash auditors.  This reduces the risk of landing on an
+      # untrustworthy provider.  You can remove this block if you are testing
+      # and want the widest possible provider selection.
+      signedBy:
+        anyOf:
+          # Overclock Labs (Akash core team)
+          - "akash1365yvmc4s7awdyj3n2sav7xfx76adc6dnmlx63"
+          # Praetor
+          - "akash18qa2a2ltfyvkyj0ggj3hkvuj6twzyumuaru9s4"
+
+      # Pricing — the maximum amount (in uAKT) you are willing to pay per block.
+      # Increase this if you cannot find a matching provider, or if you want to
+      # target higher-end GPU nodes.
+      pricing:
+        autoresearch:
+          denom: uakt
+          amount: 10000
+
+# ── Deployment ────────────────────────────────────────────────────────────────
+# Maps each service to a compute profile and a placement group.
+deployment:
+  autoresearch:
+    akash:
+      profile: autoresearch
+      count: 1
