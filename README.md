@@ -156,6 +156,90 @@ Mount a volume at `/data` so your logs and training outputs survive container re
 
 Without a volume mount the directories still exist inside the container, which is useful for local testing.
 
+## How to deploy this on Akash Console
+
+[Akash Console](https://console.akash.network/) is a browser-based UI that lets you deploy containers on the Akash Network without any command-line tools.  Follow these steps to get the AutoResearch Safe Starter running on a GPU node.
+
+### Step 1 — Build and push your Docker image
+
+You need a public container registry that Akash providers can pull from (GitHub Container Registry, Docker Hub, etc.).
+
+```bash
+# Build the image locally
+docker build -t ghcr.io/your-github-username/autoresearch:latest .
+
+# Push it to the registry
+docker push ghcr.io/your-github-username/autoresearch:latest
+```
+
+> **Tip:** GitHub Container Registry (`ghcr.io`) is free for public images and works well with Akash.  Make the image public in your package settings so any Akash provider can pull it.
+
+### Step 2 — Replace the image placeholder in deploy.yaml
+
+Open `deploy.yaml` and change the `image:` line under `services.autoresearch`:
+
+```yaml
+# Before
+image: your-registry/autoresearch:latest
+
+# After — use your real image reference
+image: ghcr.io/your-github-username/autoresearch:latest
+```
+
+### Step 3 — Set your environment variables
+
+Still in `deploy.yaml`, find the `env:` block and update the values that matter for your run:
+
+| Variable | What to set | Secret? |
+|---|---|---|
+| `LLM_API_KEY` | Your real API key from Anthropic, OpenAI, etc. | **Yes — set at deploy time, never commit** |
+| `LLM_PROVIDER` | `anthropic`, `openai`, or your provider name | No |
+| `MODEL_NAME` | The model identifier, e.g. `claude-3-7-sonnet-20250219` | No |
+| `LLM_API_BASE` | Leave empty unless using a custom API endpoint | No |
+| `DATA_DIR` | Path for persistent data — default `/data` is correct for Akash | No |
+| `LOG_DIR` | Path for log files — default `/data/logs` | No |
+| `OUTPUT_DIR` | Path for model checkpoints — default `/data/output` | No |
+| `RUN_MODE` | `agent` (the only supported mode right now) | No |
+| `MAX_ITERS` | Max experiment iterations the agent may run | No |
+| `EXPERIMENT_TIMEOUT_SECONDS` | Seconds before a single experiment is cancelled | No |
+
+> ⚠️ **Never commit a real `LLM_API_KEY` to git.**  The placeholder value in `deploy.yaml` is intentionally fake.  Enter your real key in the Akash Console deploy form (see Step 4).
+
+### Step 4 — Deploy in Akash Console
+
+1. Go to [console.akash.network](https://console.akash.network/) and connect your wallet.
+2. Click **Deploy → SDL** and paste the contents of your updated `deploy.yaml`.
+3. In the deploy form you can override any `env:` value — this is the right place to enter your real `LLM_API_KEY` without putting it in a file.
+4. Review the bid list, pick a provider with an NVIDIA GPU, and accept the bid.
+5. Click **Deploy** to start the container.
+
+### Step 5 — Inspect logs and persistent outputs
+
+Once the container is running:
+
+- **View startup logs** in the Akash Console under your deployment → **Logs** tab.  You should see the `==> AutoResearch Safe Starter` banner followed by dependency installation and data preparation output.
+- **Check prepare.log** — the one-time data preparation step writes its output to `/data/logs/prepare.log`.  Use the Console shell or `akash provider lease-shell` to read it:
+
+  ```bash
+  akash provider lease-shell \
+    --from <your-wallet-address> \
+    --dseq <deployment-sequence> \
+    --provider <provider-address> \
+    -- cat /data/logs/prepare.log
+  ```
+
+- **Persistent outputs** are written under `/data/output/` (model checkpoints and result artifacts).  Because `/data` is a persistent volume, these files survive container restarts.
+- **Attach an orchestration layer** — the container stays alive in `agent` mode waiting for you to connect a coding agent.  When you do, it reads `LLM_PROVIDER`, `MODEL_NAME`, and `LLM_API_KEY` from the environment automatically.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Container exits immediately with `ERROR: LLM_API_KEY is not set` | Missing env var | Re-deploy with `LLM_API_KEY` set |
+| No GPU bids appear | No matching provider | Raise `pricing.amount` or remove `signedBy` filter in `deploy.yaml` |
+| `beta3` storage class not available | Provider doesn't support it | Change `class: beta3` to `class: beta2` in `deploy.yaml` |
+| Image pull fails | Image is private or wrong tag | Make the image public and check the tag matches exactly |
+
 ## Design choices
 
 - **Single file to modify.** The agent only touches `train.py`. This keeps the scope manageable and diffs reviewable.
