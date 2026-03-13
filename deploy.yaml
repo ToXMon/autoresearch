@@ -26,7 +26,7 @@ services:
     # ── Image ─────────────────────────────────────────────────────────────────
     # Replace this placeholder with your real image after building and pushing.
     # Example: ghcr.io/your-github-username/autoresearch:latest
-    image: your-registry/autoresearch:latest
+    image: ghcr.io/toxmon/autoresearch:master
 
     # ── Environment variables ─────────────────────────────────────────────────
     # All variables are read by the container at runtime. Nothing sensitive is
