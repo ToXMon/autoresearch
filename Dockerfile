@@ -63,3 +63,5 @@ WORKDIR $APP_HOME
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 ENTRYPOINT ["/usr/bin/tini", "--", "/start.sh"]
+
+# Cache bust: Force rebuild with fixed start.sh - $(date -u +%Y-%m-%dT%H:%M:%SZ)
