@@ -218,7 +218,7 @@ def call_llm_direct(prompt: str) -> str:
         }
     elif provider == "zhipu" or provider == "z.ai":
         # Zhipu AI (Z.AI) - OpenAI-compatible API
-        url = LLM_BASE_URL or "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        url = LLM_BASE_URL or "https://api.z.ai/api/coding/paas/v4/chat/completions"
         headers = {
             "Authorization": f"Bearer {LLM_API_KEY}",
             "Content-Type": "application/json"
@@ -273,7 +273,7 @@ def call_llm_litellm(prompt: str) -> str:
     # Set api_base for zhipu provider if not explicitly set
     api_base = LLM_BASE_URL
     if provider in ["zhipu", "z.ai"] and not LLM_BASE_URL:
-        api_base = "https://open.bigmodel.cn/api/paas/v4/"
+        api_base = "https://api.z.ai/api/coding/paas/v4/"
 
     try:
         response = litellm.completion(
