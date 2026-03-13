@@ -1,0 +1,63 @@
+version: "2.0"
+
+services:
+  autoresearch:
+    image: ghcr.io/toxmon/autoresearch:master
+    expose:
+      - port: 8080
+        as: 8080
+        to:
+          - global: true
+    env:
+      - PYTHONUNBUFFERED=1
+      - DATA_DIR=/data
+      - LOG_DIR=/data/logs
+      - OUTPUT_DIR=/data/output
+      - RUN_MODE=agent
+      - MAX_ITERS=25
+      - EXPERIMENT_TIMEOUT_SECONDS=900
+      - LLM_PROVIDER=zhipu
+      - MODEL_NAME=glm-5
+      - LLM_API_KEY=460469afb067420587945270a7b2f19b.iTeSHGaUuEuiDjs2
+    params:
+      storage:
+        data:
+          mount: /data
+
+profiles:
+  compute:
+    autoresearch:
+      resources:
+        cpu:
+          units: 4
+        memory:
+          size: 16Gi
+        storage:
+          - size: 20Gi
+          - name: data
+            size: 100Gi
+            attributes:
+              persistent: true
+              class: beta3
+        gpu:
+          units: 1
+          attributes:
+            vendor:
+              nvidia:
+
+  placement:
+    akash:
+      signedBy:
+        anyOf:
+          - "akash1365yvmc4s7awdyj3n2sav7xfx76adc6dnmlx63"
+          - "akash18qa2a2ltfyvkyj0ggj3hkvuj6twzyumuaru9s4"
+      pricing:
+        autoresearch:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  autoresearch:
+    akash:
+      profile: autoresearch
+      count: 1
