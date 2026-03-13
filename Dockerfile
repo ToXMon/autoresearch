@@ -49,8 +49,9 @@ RUN mkdir -p "$APP_HOME" \
     && git clone --depth 1 https://github.com/karpathy/autoresearch "$REPO_DIR"
 
 # ── Copy autonomous agent files ───────────────────────────────────────────────
-# Copy the agent loop and updated start script into the repo
+# Copy the agent loop, monitor server, and start script into the repo
 COPY agent_loop.py "$REPO_DIR/agent_loop.py"
+COPY monitor_server.py "$REPO_DIR/monitor_server.py"
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
