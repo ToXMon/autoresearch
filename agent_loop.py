@@ -216,6 +216,18 @@ def call_llm_direct(prompt: str) -> str:
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": prompt}]
         }
+    elif provider == "zhipu" or provider == "z.ai":
+        # Zhipu AI (Z.AI) - OpenAI-compatible API
+        url = LLM_BASE_URL or "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": MODEL_NAME,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 4096
+        }
     else:  # OpenAI-compatible
         url = LLM_BASE_URL or "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -258,13 +270,18 @@ def call_llm_litellm(prompt: str) -> str:
     else:
         model = f"{provider}/{MODEL_NAME}"
     
+    # Set api_base for zhipu provider if not explicitly set
+    api_base = LLM_BASE_URL
+    if provider in ["zhipu", "z.ai"] and not LLM_BASE_URL:
+        api_base = "https://open.bigmodel.cn/api/paas/v4/"
+
     try:
         response = litellm.completion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
             api_key=LLM_API_KEY,
-            api_base=LLM_BASE_URL if LLM_BASE_URL else None
+            api_base=api_base if api_base else None
         )
         return response.choices[0].message.content
     except Exception as e:

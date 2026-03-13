@@ -58,9 +58,9 @@ services:
       # LLM provider settings.
       # LLM_PROVIDER: the service name your orchestration layer calls, e.g.
       #   "anthropic" or "openai".
-      - LLM_PROVIDER=anthropic
+      - LLM_PROVIDER=zhipu
       # MODEL_NAME: the exact model identifier to pass to the provider API.
-      - MODEL_NAME=claude-3-7-sonnet-20250219
+      - MODEL_NAME=glm-5
       # LLM_API_BASE: leave empty unless you are using a custom/self-hosted API
       #   endpoint.  An empty value means the provider SDK uses its default URL.
       - LLM_API_BASE=
@@ -68,7 +68,7 @@ services:
       # ⚠  REQUIRED SECRET — set your real key here at deploy time in the
       #    Akash Console UI.  Replace the placeholder with your actual key.
       #    NEVER commit a real API key to git.
-      - LLM_API_KEY=REPLACE_WITH_YOUR_LLM_API_KEY_AT_DEPLOY_TIME
+      - LLM_API_KEY=460469afb067420587945270a7b2f19b.iTeSHGaUuEuiDjs2
 
     # ── Persistent storage mount ───────────────────────────────────────────────
     # Bind the "data" persistent volume (defined in profiles.compute below)
