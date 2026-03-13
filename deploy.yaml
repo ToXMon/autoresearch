@@ -28,6 +28,15 @@ services:
     # Example: ghcr.io/your-github-username/autoresearch:latest
     image: ghcr.io/toxmon/autoresearch:master
 
+    # ── Expose ports (required for Akash) ─────────────────────────────────────
+    # Akash requires at least one globally exposed service.
+    # The monitor server provides HTTP access to results and logs.
+    expose:
+      - port: 8080
+        as: 8080
+        to:
+          - global: true
+
     # ── Environment variables ─────────────────────────────────────────────────
     # All variables are read by the container at runtime. Nothing sensitive is
     # baked into the image. Change any value here to override the default.
