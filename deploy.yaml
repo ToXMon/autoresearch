@@ -26,7 +26,7 @@ services:
     # ── Image ─────────────────────────────────────────────────────────────────
     # Replace this placeholder with your real image after building and pushing.
     # Example: ghcr.io/your-github-username/autoresearch:latest
-    image: ghcr.io/toxmon/autoresearch:master
+    image: wijnaldum/autoresearch:master
 
     # ── Expose ports (required for Akash) ─────────────────────────────────────
     # Akash requires at least one globally exposed service.
