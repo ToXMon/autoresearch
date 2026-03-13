@@ -6,7 +6,7 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # Allow manual triggers
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -50,6 +50,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -60,5 +61,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Output image digest
-        run: echo ${{ steps.meta.outputs.tags }}
+      - name: Image pushed successfully
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Docker image pushed to:"
+          echo "${{ steps.meta.outputs.tags }}"
