@@ -32,6 +32,7 @@ LOG_DIR = Path(os.environ.get("LOG_DIR", "/data/logs"))
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/data/output"))
 MAX_ITERS = int(os.environ.get("MAX_ITERS", "25"))
 EXPERIMENT_TIMEOUT = int(os.environ.get("EXPERIMENT_TIMEOUT_SECONDS", "900"))
+LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT_SECONDS", "600"))  # 10 minutes for large token generation
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
@@ -247,7 +248,7 @@ def call_llm_direct(prompt: str) -> str:
             headers=headers,
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as response:
             result = json.loads(response.read().decode())
             
             if provider == "anthropic":
@@ -472,6 +473,7 @@ def main():
     log(f"LLM_PROVIDER: {LLM_PROVIDER}", "INFO")
     log(f"MODEL_NAME: {MODEL_NAME}", "INFO")
     log(f"HAS_LITELLM: {HAS_LITELLM}", "INFO")
+    log(f"LLM_TIMEOUT: {LLM_TIMEOUT}s", "INFO")
     
     # Ensure directories exist
     LOG_DIR.mkdir(parents=True, exist_ok=True)
