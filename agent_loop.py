@@ -213,7 +213,7 @@ def call_llm_direct(prompt: str) -> str:
         }
         data = {
             "model": MODEL_NAME,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "messages": [{"role": "user", "content": prompt}]
         }
     elif provider == "zhipu" or provider == "z.ai":
@@ -226,7 +226,7 @@ def call_llm_direct(prompt: str) -> str:
         data = {
             "model": MODEL_NAME,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 4096
+            "max_tokens": 8192
         }
     else:  # OpenAI-compatible
         url = LLM_BASE_URL or "https://api.openai.com/v1/chat/completions"
@@ -237,7 +237,7 @@ def call_llm_direct(prompt: str) -> str:
         data = {
             "model": MODEL_NAME,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 4096
+            "max_tokens": 8192
         }
     
     try:
@@ -279,7 +279,7 @@ def call_llm_litellm(prompt: str) -> str:
         response = litellm.completion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
+            max_tokens=8192,
             api_key=LLM_API_KEY,
             api_base=api_base if api_base else None
         )
@@ -294,6 +294,98 @@ def call_llm(prompt: str) -> str:
         return call_llm_litellm(prompt)
     else:
         return call_llm_direct(prompt)
+
+
+
+def extract_code_from_response(response: str) -> Tuple[str, bool]:
+    """Extract code from LLM response with robust handling.
+
+    Returns: (code, is_valid)
+    """
+    # Pattern 1: Code blocks with python specifier
+    python_blocks = re.findall(r"```python
+(.+?)```", response, re.DOTALL)
+
+    # Pattern 2: Code blocks without language specifier
+    plain_blocks = re.findall(r"```
+(.+?)```", response, re.DOTALL)
+
+    # Pattern 3: Code blocks that might have whitespace before/after
+    all_blocks = re.findall(r"```(?:python)?\s*
+(.+?)```", response, re.DOTALL)
+
+    # Combine all found blocks and take the longest one
+    all_found = python_blocks + plain_blocks + all_blocks
+
+    if not all_found:
+        log("No code blocks found in response", "ERROR")
+        return "", False
+
+    # Take the longest code block (most likely to be complete)
+    code = max(all_found, key=len).strip()
+
+    # Validate the code is complete
+    is_valid = validate_extracted_code(code)
+
+    if not is_valid:
+        log(f"Extracted code failed validation (length: {len(code)})", "WARNING")
+
+    return code, is_valid
+
+def validate_extracted_code(code: str) -> bool:
+    """Validate that extracted code is complete and contains required elements.
+
+    Returns: True if code appears complete and valid
+    """
+    if len(code) < 10000:
+        log(f"Code too short: {len(code)} chars (expected > 10000)", "WARNING")
+        return False
+
+    # Check for required elements that should be in train.py
+    required_elements = [
+        (r'class\s+GPT', 'class GPT'),
+        (r'def\s+forward', 'def forward'),
+        (r'import\s+torch', 'import torch'),
+    ]
+
+    missing = []
+    for pattern, name in required_elements:
+        if not re.search(pattern, code):
+            missing.append(name)
+
+    if missing:
+        log(f"Code missing required elements: {missing}", "WARNING")
+        return False
+
+    # Check for balanced braces/brackets (basic syntax check)
+    open_braces = code.count('{')
+    close_braces = code.count('}')
+    open_brackets = code.count('[')
+    close_brackets = code.count(']')
+    open_parens = code.count('(')
+    close_parens = code.count(')')
+
+    if open_braces != close_braces:
+        log(f"Unbalanced braces: {{ = {open_braces}, }} = {close_braces}", "WARNING")
+        return False
+    if open_brackets != close_brackets:
+        log(f"Unbalanced brackets: [ = {open_brackets}, ] = {close_brackets}", "WARNING")
+        return False
+    if open_parens != close_parens:
+        log(f"Unbalanced parentheses: ( = {open_parens}, ) = {close_parens}", "WARNING")
+        return False
+
+    # Check that code doesn't end mid-line (truncation indicator)
+    last_line = code.strip().split('
+')[-1] if code.strip() else ''
+    if last_line and not last_line.endswith(('}', ')', '"', "'", '`', ':', ',')):
+        # Allow lines ending with common characters
+        if not re.search(r'[a-zA-Z0-9_\s]$', last_line):
+            log(f"Code may be truncated - ends unexpectedly: {last_line[-50:]}", "WARNING")
+            return False
+
+    log(f"Code validation passed: {len(code)} chars", "SUCCESS")
+    return True
 
 def generate_experiment(train_code: str, results_history: list, best_bpb: float) -> Tuple[str, str]:
     """Use LLM to generate next experiment"""
