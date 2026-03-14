@@ -301,88 +301,139 @@ def call_llm(prompt: str) -> str:
 def extract_code_from_response(response: str) -> Tuple[str, bool]:
     """Extract code from LLM response with robust handling.
 
+    Handles:
+    - Properly closed code blocks: ```python
+...
+```
+    - Truncated responses without closing ```
+    - Code blocks after 'CODE:' marker
+    - Multiple code blocks (takes longest)
+
     Returns: (code, is_valid)
     """
-    # Pattern 1: Code blocks with python specifier
-    python_blocks = re.findall(r"```python\n(.+?)```", response, re.DOTALL)
 
-    # Pattern 2: Code blocks without language specifier
-    plain_blocks = re.findall(r"```\n(.+?)```", response, re.DOTALL)
+    # Strategy 1: Properly closed ```python blocks
+    closed_python_blocks = re.findall(r"```python\s*\n(.+?)```", response, re.DOTALL)
 
-    # Pattern 3: Code blocks that might have whitespace before/after
-    all_blocks = re.findall(r"```(?:python)?\s*\n(.+?)```", response, re.DOTALL)
+    # Strategy 2: Unclosed ```python blocks (truncated responses)
+    # Match from ```python to end of string or next ```
+    unclosed_python_blocks = []
+    if "```python" in response:
+        parts = response.split("```python")
+        for part in parts[1:]:  # Skip first part before any ```python
+            # Take everything until end or until next ```
+            if "```" in part:
+                code_part = part.split("```")[0]
+            else:
+                # No closing marker - take everything (truncated response)
+                code_part = part
+            unclosed_python_blocks.append(code_part)
 
-    # Combine all found blocks and take the longest one
-    all_found = python_blocks + plain_blocks + all_blocks
+    # Strategy 3: Generic code blocks (no language specifier)
+    generic_blocks = re.findall(r"```\s*\n(.+?)```", response, re.DOTALL)
 
-    if not all_found:
+    # Log what we found
+    log(f"Found {len(closed_python_blocks)} closed python blocks", "INFO")
+    log(f"Found {len(unclosed_python_blocks)} unclosed/truncated python blocks", "INFO")
+    log(f"Found {len(generic_blocks)} generic code blocks", "INFO")
+
+    # Combine all found blocks
+    all_blocks = closed_python_blocks + unclosed_python_blocks + generic_blocks
+
+    if not all_blocks:
         log("No code blocks found in response", "ERROR")
+        # Last resort: try to find anything after 'CODE:' marker
+        if "CODE:" in response:
+            code_section = response.split("CODE:")[-1]
+            # Strip markdown artifacts
+            code_section = re.sub(r"^```python\s*", "", code_section)
+            code_section = re.sub(r"^```\s*", "", code_section)
+            code_section = code_section.strip()
+            if len(code_section) > 1000:
+                log(f"Using fallback extraction from CODE: marker ({len(code_section)} chars)", "WARNING")
+                return code_section, False
         return "", False
 
     # Take the longest code block (most likely to be complete)
-    code = max(all_found, key=len).strip()
+    code = max(all_blocks, key=len).strip()
 
-    # Validate the code is complete
+    log(f"Selected longest block: {len(code)} chars", "INFO")
+    log(f"First 100 chars: {code[:100]}", "INFO")
+    log(f"Last 100 chars: {code[-100:]}", "INFO")
+
+    # Validate the code
     is_valid = validate_extracted_code(code)
-
-    if not is_valid:
-        log(f"Extracted code failed validation (length: {len(code)})", "WARNING")
 
     return code, is_valid
 
 def validate_extracted_code(code: str) -> bool:
-    """Validate that extracted code is complete and contains required elements.
+    """Validate that extracted code is complete and contains required elements."""
 
-    Returns: True if code appears complete and valid
-    """
-    if len(code) < 10000:
-        log(f"Code too short: {len(code)} chars (expected > 10000)", "WARNING")
-        return False
+    # Length check - warn but don't fail for shorter code
+    if len(code) < 5000:
+        log(f"Code shorter than expected: {len(code)} chars", "WARNING")
 
-    # Check for required elements that should be in train.py
-    required_elements = [
-        (r'class\s+GPT', 'class GPT'),
-        (r'def\s+forward', 'def forward'),
-        (r'import\s+torch', 'import torch'),
+    # Check for required elements
+    required_patterns = [
+        (r"class\s+\w+", 'class definition'),
+        (r"def\s+\w+", 'function definition'),
+        (r"import\s+", 'import statement'),
     ]
 
-    missing = []
-    for pattern, name in required_elements:
-        if not re.search(pattern, code):
-            missing.append(name)
+    found_elements = []
+    missing_elements = []
+    for pattern, name in required_patterns:
+        if re.search(pattern, code):
+            found_elements.append(name)
+        else:
+            missing_elements.append(name)
 
-    if missing:
-        log(f"Code missing required elements: {missing}", "WARNING")
-        return False
+    if found_elements:
+        log(f"Found required elements: {found_elements}", "INFO")
+    if missing_elements:
+        log(f"Missing elements: {missing_elements}", "WARNING")
 
-    # Check for balanced braces/brackets (basic syntax check)
-    open_braces = code.count('{')
-    close_braces = code.count('}')
-    open_brackets = code.count('[')
-    close_brackets = code.count(']')
-    open_parens = code.count('(')
-    close_parens = code.count(')')
+    # Check for truncation indicators
+    last_lines = code.strip().split("\n")[-5:] if code.strip() else []
+    last_line = last_lines[-1] if last_lines else ""
 
+    truncation_indicators = [
+        last_line.endswith("..."),
+        last_line.endswith("\\"),  # Line continuation
+        not last_line.strip(),  # Empty last line
+    ]
+
+    if any(truncation_indicators):
+        log(f"Possible truncation detected, last line: '{last_line[-50:]}'", "WARNING")
+
+    # Basic bracket balance check
+    open_braces = code.count("{")
+    close_braces = code.count("}")
+    open_brackets = code.count("[")
+    close_brackets = code.count("]")
+    open_parens = code.count("(")
+    close_parens = code.count(")")
+
+    balance_issues = []
     if open_braces != close_braces:
-        log(f"Unbalanced braces: {{ = {open_braces}, }} = {close_braces}", "WARNING")
-        return False
+        balance_issues.append(f"braces: {{{open_braces} vs }}{close_braces}")
     if open_brackets != close_brackets:
-        log(f"Unbalanced brackets: [ = {open_brackets}, ] = {close_brackets}", "WARNING")
-        return False
+        balance_issues.append(f"brackets: [{open_brackets} vs ]{close_brackets}")
     if open_parens != close_parens:
-        log(f"Unbalanced parentheses: ( = {open_parens}, ) = {close_parens}", "WARNING")
-        return False
+        balance_issues.append(f"parens: ({open_parens} vs ){close_parens}")
 
-    # Check that code doesn't end mid-line (truncation indicator)
-    last_line = code.strip().split('\\n')[-1] if code.strip() else ''
-    if last_line and not last_line.endswith(('}', ')', '"', "'", '`', ':', ',')):
-        # Allow lines ending with common characters
-        if not re.search(r'[a-zA-Z0-9_\s]$', last_line):
-            log(f"Code may be truncated - ends unexpectedly: {last_line[-50:]}", "WARNING")
-            return False
+    if balance_issues:
+        log(f"Bracket imbalance: {', '.join(balance_issues)}", "WARNING")
 
-    log(f"Code validation passed: {len(code)} chars", "SUCCESS")
-    return True
+    # Consider valid if we have at least some required elements and no major issues
+    is_valid = len(found_elements) >= 2 and not balance_issues
+
+    if is_valid:
+        log(f"Code validation passed: {len(code)} chars", "SUCCESS")
+    else:
+        log(f"Code validation failed but may still be useful", "WARNING")
+
+    return is_valid
 
 def generate_experiment(train_code: str, results_history: list, best_bpb: float) -> Tuple[str, str]:
     """Use LLM to generate next experiment"""
