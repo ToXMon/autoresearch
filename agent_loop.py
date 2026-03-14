@@ -303,16 +303,13 @@ def extract_code_from_response(response: str) -> Tuple[str, bool]:
     Returns: (code, is_valid)
     """
     # Pattern 1: Code blocks with python specifier
-    python_blocks = re.findall(r"```python
-(.+?)```", response, re.DOTALL)
+    python_blocks = re.findall(r"```python\n(.+?)```", response, re.DOTALL)
 
     # Pattern 2: Code blocks without language specifier
-    plain_blocks = re.findall(r"```
-(.+?)```", response, re.DOTALL)
+    plain_blocks = re.findall(r"```\n(.+?)```", response, re.DOTALL)
 
     # Pattern 3: Code blocks that might have whitespace before/after
-    all_blocks = re.findall(r"```(?:python)?\s*
-(.+?)```", response, re.DOTALL)
+    all_blocks = re.findall(r"```(?:python)?\s*\n(.+?)```", response, re.DOTALL)
 
     # Combine all found blocks and take the longest one
     all_found = python_blocks + plain_blocks + all_blocks
@@ -376,8 +373,7 @@ def validate_extracted_code(code: str) -> bool:
         return False
 
     # Check that code doesn't end mid-line (truncation indicator)
-    last_line = code.strip().split('
-')[-1] if code.strip() else ''
+    last_line = code.strip().split('\\n')[-1] if code.strip() else ''
     if last_line and not last_line.endswith(('}', ')', '"', "'", '`', ':', ',')):
         # Allow lines ending with common characters
         if not re.search(r'[a-zA-Z0-9_\s]$', last_line):
